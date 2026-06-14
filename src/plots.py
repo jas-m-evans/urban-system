@@ -239,6 +239,7 @@ def plot_posterior_snapshots(
     fig, axes = plt.subplots(2, (n_panels + 1) // 2, figsize=figsize)
     axes = axes.flatten()
 
+    i = -1
     for i, k in enumerate(snapshots):
         if k > len(xs_all):
             break

@@ -127,7 +127,12 @@ class TestTrueValues:
             assert sim.true_value(x) <= f_best + 1e-3
 
     def test_2d_response_function(self):
-        """2-D response function should return a scalar for a 2-element array."""
+        """2-D response function should return a scalar near 1.0 at the first peak centre."""
+        import numpy as np
+        from src.simulator import response_2d_gaussian_mixture
+        # The first Gaussian peak is centred at (0.3, 0.7).
+        # peak1 = exp(0) = 1.0; peak2 adds a tiny amount (~3e-5) at this point.
         val = response_2d_gaussian_mixture(np.array([0.3, 0.7]))
         assert isinstance(val, float)
-        assert val > 0.9  # this point is near the first peak
+        # Value should be very close to 1.0 (the second peak is negligible here)
+        assert abs(val - 1.0) < 1e-3

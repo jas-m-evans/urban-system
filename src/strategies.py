@@ -120,6 +120,14 @@ class BayesianStrategy:
         Exploration weight in UCB.  Try 1.0 (greedy) to 5.0 (exploratory).
     seed : int
         For reproducibility of the warm-up random draws.
+    matern_nu : float
+        Smoothness parameter for the Matérn kernel (default 2.5 → twice
+        differentiable).  Common choices: 0.5, 1.5, 2.5.
+    length_scale_bounds : (float, float)
+        Lower and upper bounds on the GP length-scale hyperparameter during
+        optimisation.  Tighten if you see many convergence warnings.
+    n_restarts_optimizer : int
+        Number of random restarts for GP hyperparameter optimisation.
     """
 
     def __init__(
@@ -129,12 +137,31 @@ class BayesianStrategy:
         n_init: int = 5,
         kappa: float = 2.0,
         seed: int = 0,
+        matern_nu: float = 2.5,
+        length_scale_bounds: tuple = (1e-2, 10.0),
+        n_restarts_optimizer: int = 3,
     ):
         self.sim = simulator
         self.n = n_experiments
         self.n_init = n_init
         self.kappa = kappa
         self.rng = np.random.default_rng(seed)
+        self.matern_nu = matern_nu
+        self.length_scale_bounds = length_scale_bounds
+        self.n_restarts_optimizer = n_restarts_optimizer
+
+    # ------------------------------------------------------------------
+    def _make_gpr(self):
+        """Create a fresh GaussianProcessRegressor with the configured kernel."""
+        from sklearn.gaussian_process import GaussianProcessRegressor
+        from sklearn.gaussian_process.kernels import Matern
+
+        kernel = Matern(nu=self.matern_nu, length_scale_bounds=self.length_scale_bounds)
+        return GaussianProcessRegressor(
+            kernel=kernel,
+            n_restarts_optimizer=self.n_restarts_optimizer,
+            random_state=0,
+        )
 
     # ------------------------------------------------------------------
     def _ucb(self, xs_candidate: np.ndarray, gpr) -> np.ndarray:
@@ -144,9 +171,6 @@ class BayesianStrategy:
 
     # ------------------------------------------------------------------
     def run(self) -> Tuple[List[float], List[float]]:
-        from sklearn.gaussian_process import GaussianProcessRegressor
-        from sklearn.gaussian_process.kernels import Matern
-
         lo, hi = self.sim.bounds
         xs_all: List[float] = []
         ys_all: List[float] = []
@@ -159,12 +183,7 @@ class BayesianStrategy:
             ys_all.append(y)
 
         # ---- Phase 2: GP-guided experiments -------------------------
-        kernel = Matern(nu=2.5, length_scale_bounds=(1e-2, 10.0))
-        gpr = GaussianProcessRegressor(
-            kernel=kernel,
-            n_restarts_optimizer=3,
-            random_state=0,
-        )
+        gpr = self._make_gpr()
 
         # Dense candidate grid for acquisition maximisation
         xs_candidates = np.linspace(lo, hi, 1000)
@@ -189,11 +208,7 @@ class BayesianStrategy:
         Return (mean, std) of the GP posterior at xs_query, given observations.
         Useful for plotting uncertainty bands.
         """
-        from sklearn.gaussian_process import GaussianProcessRegressor
-        from sklearn.gaussian_process.kernels import Matern
-
-        kernel = Matern(nu=2.5, length_scale_bounds=(1e-2, 10.0))
-        gpr = GaussianProcessRegressor(kernel=kernel, random_state=0)
+        gpr = self._make_gpr()
         gpr.fit(np.array(xs_observed).reshape(-1, 1), np.array(ys_observed))
         mu, sigma = gpr.predict(xs_query.reshape(-1, 1), return_std=True)
         return mu, sigma
